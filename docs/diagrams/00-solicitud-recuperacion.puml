@@ -1,0 +1,65 @@
+@startuml
+title 0. Solicitud de enlace de recuperación
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam sequenceArrowColor #334155
+skinparam sequenceLifeLineBorderColor #64748B
+skinparam participantBackgroundColor #EFF6FF
+skinparam participantBorderColor #475569
+skinparam noteBackgroundColor #FFFBEB
+skinparam noteBorderColor #D97706
+skinparam maxMessageSize 280
+autonumber
+
+participant "Cliente : Browser" as Cliente
+participant "API : FastAPI" as API
+participant "Servicio : AuthService" as Servicio
+database "DB : PostgreSQL" as DB
+
+note over API, DB
+  Flujo objetivo: requiere integrar los PR de JWT,
+  repositorio, servicio y endpoints del equipo.
+end note
+
+Cliente -> API : POST /api/auth/forgot-password\n{email}
+activate API
+API -> API : Validar ForgotPasswordDto
+API -> Servicio : request_password_reset(email)
+activate Servicio
+Servicio -> Servicio : Normalizar email.strip().lower()
+Servicio -> DB : SELECT usuario WHERE email = :email
+activate DB
+DB --> Servicio : Usuario o None
+deactivate DB
+
+alt Correo registrado
+  Servicio -> Servicio : Crear JWT firmado con HS256\nsub, jti aleatorio, type=password_reset, iat, exp
+  note right of Servicio
+    exp = ahora UTC + 15 minutos.
+    JWT no contiene contraseñas ni otros secretos.
+  end note
+  Servicio -> DB : INSERT password_reset_tokens\n(jti, user_id, expires_at, used_at=NULL); COMMIT
+  activate DB
+  DB --> Servicio : Registro persistido
+  deactivate DB
+  Servicio -> Servicio : Simular correo en log de desarrollo:\nFRONTEND_URL/reset-password?token=JWT
+  note right of Servicio
+    El enlace contiene un token sensible.
+    Solo se consulta localmente para la práctica;
+    nunca se registran contraseñas.
+  end note
+else Correo no registrado
+  Servicio -> Servicio : No generar token; no revelar existencia
+end
+
+Servicio --> API : Finalizar solicitud
+deactivate Servicio
+API --> Cliente : 200 OK, misma respuesta genérica\n{data: {message: "Si el correo está registrado, ..."}}
+deactivate API
+
+note over Cliente, API
+  La respuesta HTTP no incluye el token ni el enlace.
+  Las respuestas se envuelven en ApiResponse (data.message).
+  Datos inválidos: 400 en la base actual; 422 según el contrato objetivo.
+end note
+@enduml
