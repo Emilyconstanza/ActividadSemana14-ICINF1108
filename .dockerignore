@@ -1,0 +1,31 @@
+# Virtualenv and caches (recreated inside the image)
+.venv
+__pycache__
+*.pyc
+.ruff_cache
+dist
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Version control and editor config
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+
+# Docs and tooling not needed to build the image
+README.md
+postman
+Makefile
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# OS / logs
+.DS_Store
+Thumbs.db
+*.log
