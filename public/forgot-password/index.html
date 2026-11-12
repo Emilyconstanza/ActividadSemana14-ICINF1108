@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es" class="h-full">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="referrer" content="no-referrer" />
+		<title>Recuperar contraseña — API Demo</title>
+		<script src="/js/password-reset.js"></script>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="h-full bg-zinc-50 font-sans antialiased text-zinc-900">
+		<main class="mx-auto max-w-sm px-4 py-16">
+			<a href="/login.html" class="text-sm text-zinc-600 underline underline-offset-2">Volver al inicio de sesión</a>
+			<h1 class="mt-6 text-3xl font-semibold tracking-tight">Recuperar contraseña</h1>
+			<p class="mt-2 text-sm text-zinc-600">Escribe tu correo para solicitar un enlace de un solo uso, válido por 15 minutos.</p>
+			<p id="feedback" role="status" aria-live="polite" aria-atomic="true" class="mt-6 rounded-lg border border-zinc-200 bg-white p-3 text-sm" hidden></p>
+			<form id="forgot-password-form" class="mt-8 space-y-4" novalidate>
+				<div>
+					<label for="email" class="mb-1 block text-sm font-medium text-zinc-700">Correo electrónico</label>
+					<input id="email" name="email" type="email" autocomplete="email" required aria-describedby="email-error" class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900" />
+					<p id="email-error" class="mt-1 text-xs text-red-700" hidden></p>
+				</div>
+				<button type="submit" class="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50" disabled>Enviar enlace de recuperación</button>
+			</form>
+			<p class="mt-6 text-xs leading-relaxed text-zinc-500">Por seguridad, mostramos la misma confirmación para cualquier correo. En esta demostración, el envío de correo se simula en el servidor.</p>
+			<noscript><p class="mt-4 text-sm text-red-700">Activa JavaScript para solicitar un enlace de recuperación.</p></noscript>
+		</main>
+	</body>
+</html>
