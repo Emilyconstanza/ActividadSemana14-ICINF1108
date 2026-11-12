@@ -1,11 +1,14 @@
-# CRUD Students & Pets (FastAPI)
+# Students & Pets: recuperación de contraseña con JWT de un solo uso
 
-Proyecto FastAPI que implementa un **CRUD** para la entidad `Student` y sus `Pet`, con **almacenamiento en memoria** a través de repositorios respaldados por diccionarios. Los datos viven mientras el proceso esté corriendo.
+Proyecto de ICINF1108 con autenticación por sesiones, CRUD de estudiantes y mascotas y persistencia en **PostgreSQL mediante SQLAlchemy**. Alembic administra el esquema y el volumen `pgdata` conserva los datos al reiniciar los contenedores.
+
+La rama `feat/isidora-frontend-and-docs` incorpora la interfaz de recuperación, la matriz de pruebas de Postman y los diagramas de secuencia. Su base es `main` en `29a3226`: solo está integrada la configuración de Emily (PR #1). **Los casos de uso, la utilidad JWT, la persistencia del consumo y los endpoints de recuperación todavía dependen de los cambios de Camila, Francisca Alvarado y Francisca Salazar.** Las pantallas y pruebas de esta rama describen el contrato de integración; no equivalen a un flujo completo ya aprobado.
 
 ## Tecnologías
 
 - Python 3.13
-- FastAPI + repositorios en memoria
+- FastAPI + SQLAlchemy + PostgreSQL
+- Alembic, PyJWT y autenticación mediante cookie de sesión
 - HTML + JS + Tailwind CSS (frontend estático)
 
 ## Resumen funcional
@@ -46,7 +49,7 @@ La API expone operaciones CRUD completas sobre estudiantes y mascotas:
 
 Si no se envía `pets` (o se envía vacío), el comportamiento es exactamente el mismo de antes.
 
-> **Punto de transacción:** este endpoint realiza varias escrituras (el estudiante y cada mascota). Con un ORM/SQL, todas deben ejecutarse dentro de una transacción: si una mascota falla (por ejemplo, por nombre duplicado), el estudiante y las mascotas anteriores no deben quedar guardados. En esta versión en memoria la implementación es secuencial y **no** hace rollback, a propósito, para que la actividad de ORM/transacciones parta de ese problema.
+> **Transacción:** el servicio inserta el estudiante y sus mascotas, realiza `flush` y confirma con un solo `commit`. Si falla una inserción antes de confirmar, el cierre de la sesión descarta la transacción. Las restricciones de unicidad también se verifican en PostgreSQL.
 
 ### Modelo de datos
 
@@ -185,7 +188,7 @@ El cliente estático (`public/`) consume este estándar de forma uniforme:
 ## Contexto técnico
 
 - **Backend**: FastAPI
-- **Persistencia**: en memoria (repositorios respaldados por diccionarios); los datos se pierden al reiniciar
+- **Persistencia**: PostgreSQL, repositorios SQLAlchemy y migraciones Alembic
 - **Validación**: Pydantic v2
 - **Frontend**: archivos estáticos en `public/` (Alpine.js + Tailwind CSS + vanilla-sonner, vía CDN)
 - **Gestor de dependencias**: uv
@@ -193,19 +196,24 @@ El cliente estático (`public/`) consume este estándar de forma uniforme:
 
 ## Ejecución local
 
-1. Instalar dependencias:
+1. Desde la carpeta del repositorio, copiar la configuración local e iniciar PostgreSQL (requiere Docker Desktop en ejecución):
 
-    ```bash
-    make install
+    ```powershell
+    Copy-Item .env.example .env
+    docker compose up -d db
     ```
 
-    O directamente con uv:
+    En Linux/macOS se puede usar `cp .env.example .env`. Revisar `DB_PORT` y `DATABASE_URL` si el puerto 5432 está ocupado.
+
+2. Instalar dependencias con Python 3.13 y aplicar ambas migraciones (`0001` y `0002`):
 
     ```bash
-    uv sync
+    uv sync --frozen
+    uv run alembic upgrade head
+    uv run alembic current
     ```
 
-2. Levantar el servidor en modo desarrollo:
+3. Levantar el servidor en modo desarrollo:
 
     ```bash
     make dev
@@ -222,7 +230,88 @@ La aplicación queda disponible en:
 - `http://localhost:3000`
 - `http://localhost:3000/docs`
 
-> Al ser un almacenamiento en memoria, los datos se pierden cada vez que se reinicia el servidor (incluido el reload de desarrollo).
+También puede ejecutarse todo con `docker compose up --build`; la imagen aplica las migraciones antes de iniciar Uvicorn. `docker compose down` conserva el volumen. `docker compose down -v` elimina los datos y debe reservarse para una base de pruebas descartable.
+
+## Recuperación de contraseña: contrato de integración
+
+El router de este repositorio usa **`/api/auth`**. Las rutas `/auth/...` de la guía se publican con el prefijo `/api`. En Swagger (`/docs`) deben aparecer los dos endpoints cuando se integren los cambios de backend.
+
+| Método y ruta | Cuerpo JSON | Resultado esperado |
+| --- | --- | --- |
+| `POST /api/auth/forgot-password` | `{ "email": "prueba@example.com" }` | `200`: mismo mensaje para correo registrado e inexistente; nunca devuelve el token. |
+| `POST /api/auth/reset-password` | `{ "token": "<JWT del enlace>", "newPassword": "NuevaClave123!" }` | `200`: actualiza la contraseña, consume el enlace y revoca las sesiones anteriores en una transacción. |
+| `POST /api/auth/login` | `{ "email": "prueba@example.com", "password": "NuevaClave123!" }` | `200` con la contraseña nueva; `401` con la antigua. |
+
+La respuesta funcional esperada del primer endpoint es:
+
+```json
+{
+  "message": "Si el correo está registrado, recibirás un enlace de recuperación válido por 15 minutos."
+}
+```
+
+La del segundo es `{ "message": "Contraseña actualizada exitosamente." }`. El middleware existente envuelve estos objetos: el mensaje funcional queda en **`data.message`**, junto a los campos superiores `code`, `success`, `message` y `timestamp`. El `message` superior es el texto general del middleware.
+
+| Estado | Significado |
+| --- | --- |
+| `200 OK` | Solicitud genérica de recuperación o cambio completado. |
+| `400 Bad Request` / `401 Unauthorized` | Token inválido, manipulado, expirado o ya usado, según la traducción del controlador. |
+| `422 Unprocessable Entity` | Validación de cuerpo requerida por la guía y su documentación OpenAPI. **Pendiente de acordar:** el manejador global actual transforma la validación en `400`; añadir `422` a Swagger por sí solo no cambia ese comportamiento. |
+| `404 Not Found` | Endpoint aún no integrado o ruta incorrecta; nunca cuenta como prueba de rechazo de token aprobada. |
+
+### Configuración JWT y enlace
+
+| Variable / ajuste | Estado en la base actual |
+| --- | --- |
+| `JWT_SECRET_KEY` | Se lee del entorno o de `.env`; usar un valor privado y aleatorio fuera del desarrollo. No exportarlo a Postman ni versionarlo. |
+| `JWT_ALGORITHM` | `HS256`, constante en `app/shared/config.py`. Aún no se lee del entorno; escribirla en `.env` no cambia el algoritmo. La verificación debe usar una lista fija de algoritmos permitidos. |
+| `PASSWORD_RESET_EXPIRE_MINUTES` | `15`, constante en `app/shared/config.py`. Aún no se lee del entorno. |
+| `FRONTEND_URL` | Configuración pendiente del servicio de recuperación. Para desarrollo, el origen esperado es `http://localhost:3000`, sin `/` final. |
+
+El servicio deberá simular el envío del enlace `FRONTEND_URL/reset-password?token=...` en el log de desarrollo. El JWT contiene `sub`, `jti`, `type=password_reset`, `iat` y `exp`; su contenido es legible, por lo que no debe incluir contraseñas. La contraseña se almacena solo como hash y nunca se escribe en logs. El enlace se consume una vez y la comprobación definitiva ocurre en la transacción de la base de datos.
+
+### Pantallas
+
+- Desde `/login.html`, abrir **¿Olvidaste tu contraseña?** o ir a `/forgot-password/`.
+- Enviar el correo y mostrar siempre la confirmación genérica cuando el servidor responda `200`.
+- Abrir el enlace recibido en `/reset-password?token=...`. `StaticFiles(html=True)` redirige a `/reset-password/` conservando la consulta.
+- Introducir y confirmar una contraseña de 8 a 72 caracteres. Un enlace rechazado permite solicitar otro; un cambio exitoso permite volver a iniciar sesión.
+
+El token se conserva únicamente en memoria durante la página de cambio; se retira de la URL con `history.replaceState`. Las pantallas de recuperación no guardan tokens en `localStorage` ni `sessionStorage` y usan una política `no-referrer`. Los errores `401` del cambio se muestran en esa pantalla, sin redirigir al login con el token dentro de `next`.
+
+### Pruebas en Postman
+
+Importar [la colección](postman/students-collection.json) y seguir [las instrucciones de ejecución](postman/README.md). La carpeta **Password Reset (One-Time JWT)** cubre:
+
+1. Correo registrado: `200` y respuesta genérica.
+2. Correo inexistente: `200` y la misma respuesta funcional.
+3. Token manipulado: `400/401` antes de consumir el original.
+4. Token válido: `200`.
+5. Reutilización exacta del mismo token: `400/401`.
+6. Contraseña antigua: login `401`; contraseña nueva: login `200`.
+
+Usar una cuenta descartable y pegar el token del log solo en la variable local indicada por la colección. No debe añadirse un endpoint para exponerlo ni adjuntar tokens/cookies a capturas o exportaciones. La emisión del enlace y su consumo se ejecutan en etapas para poder introducir el token real entre ambas.
+
+### Diagramas UML
+
+- [Secuencia 0: solicitud del enlace](docs/diagrams/00-solicitud-recuperacion.puml).
+- [Secuencia 1: restablecimiento de contraseña](docs/diagrams/01-restablecimiento-contrasena.puml).
+
+Los diagramas representan el contrato esperado y las responsabilidades de cada capa. Incluyen líneas de vida tipadas, llamadas síncronas, retornos punteados, autollamadas y alternativas con guardas; el segundo muestra la transacción de consumo, actualización de hash y revocación de sesiones. Las instrucciones de visualización están en [docs/diagrams](docs/diagrams/README.md).
+
+### Pendientes para cerrar la integración
+
+- Integrar, en orden, utilidad JWT y repositorio (Camila), servicio (Francisca Alvarado) y endpoints/Swagger (Francisca Salazar).
+- Confirmar `FRONTEND_URL`, prefijo `/api/auth`, formato `data.message`, traducción de errores y diferencia de validación `400/422`.
+- Levantar PostgreSQL, aplicar migraciones y ejecutar las etapas de Postman con un enlace real. Comprobar también la revocación de una sesión anterior antes de volver a hacer login.
+- Mantener la rama/PR de Isidora pendiente de la validación real del flujo. Las pruebas de interfaz con respuestas simuladas verifican su comportamiento, pero no demuestran firma JWT, persistencia ni consumo atómico.
+
+### Validación de esta rama
+
+- JSON y sintaxis de los 26 scripts de Postman verificados; las 13 solicitudes nuevas se comprobaron con respuestas de prueba. Las comprobaciones detectaron token ausente, respuesta de reutilización indebidamente exitosa, mensajes de recuperación distintos y respuestas `404/500` en lugar de un rechazo de token.
+- Interfaz revisada en navegador con un servidor de prueba: correo obligatorio, confirmación genérica, contraseñas distintas, cambio exitoso, `401` sin redirección y errores de campo `422`. El token desaparece de la URL antes de enviar el formulario.
+- FastAPI real: ambas pantallas se sirven con `200` y `/reset-password?token=...` conserva la consulta en la redirección a `/reset-password/`. Ambos endpoints de recuperación devuelven `404` en esta base; **la matriz contra la API real sigue pendiente**.
+- Diagramas renderizados localmente y revisados visualmente; enlaces relativos de documentación y ausencia de secretos en el entorno compartido comprobados.
 
 ## Comandos útiles
 
