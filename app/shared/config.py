@@ -35,3 +35,9 @@ SESSION_MAX_AGE_SECONDS: Final[int] = (
 
 # Solo debe ser `true` cuando la app se sirve por HTTPS.
 SESSION_COOKIE_SECURE: Final[bool] = os.getenv("SESSION_COOKIE_SECURE") == "true"
+
+JWT_SECRET_KEY: Final[str] = os.getenv(
+    "JWT_SECRET_KEY", "cambia-esta-clave-secreta-en-produccion-icinf1108"
+)
+JWT_ALGORITHM: Final[str] = "HS256"
+PASSWORD_RESET_EXPIRE_MINUTES: Final[int] = 15

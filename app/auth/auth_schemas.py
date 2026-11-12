@@ -97,7 +97,54 @@ class LoginDto(BaseModel):
         _raise_validation(errors)
         return v
 
+TOKEN_TYPE_MESSAGE = "El token debe ser un texto"
+TOKEN_EMPTY_MESSAGE = "El token no puede estar vacío"
 
+
+class ForgotPasswordDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _validate_email(cls, v: object) -> object:
+        _raise_validation(_email_errors(v))
+        return v
+
+
+class ResetPasswordDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    newPassword: str
+
+    @field_validator("token", mode="before")
+    @classmethod
+    def _validate_token(cls, v: object) -> object:
+        errors: list[str] = []
+
+        if not isinstance(v, str):
+            errors.append(TOKEN_TYPE_MESSAGE)
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            errors.append(TOKEN_EMPTY_MESSAGE)
+
+        _raise_validation(errors)
+        return v
+
+    @field_validator("newPassword", mode="before")
+    @classmethod
+    def _validate_new_password(cls, v: object) -> object:
+        errors: list[str] = []
+
+        if not isinstance(v, str):
+            errors.append(PASSWORD_TYPE_MESSAGE)
+        if not (isinstance(v, str) and 8 <= len(v) <= 72):
+            errors.append(PASSWORD_LENGTH_MESSAGE)
+
+        _raise_validation(errors)
+        return v
+        
 def _email_errors(v: object) -> list[str]:
     return validate_email(
         v,
