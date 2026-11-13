@@ -2,7 +2,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from app.auth.auth_schemas import LoginDto, RegisterDto, User
+from app.auth.auth_schemas import (
+    ForgotPasswordDto,
+    LoginDto,
+    MessageResponseDto,
+    RegisterDto,
+    ResetPasswordDto,
+    User,
+)
 from app.auth.auth_service import AuthServiceDep
 from app.auth.session import (
     UNAUTHORIZED_MESSAGE,
@@ -63,3 +70,44 @@ def me(session: CurrentSession, response: Response, db: DbSession) -> User:
         )
 
     return User.model_validate(user)
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponseDto,
+    status_code=status.HTTP_200_OK,
+    summary="Solicitar recuperación de contraseña",
+    description="Genera un token JWT de un solo uso y envía instrucciones si el correo existe.",
+    responses={
+        200: {"description": "Solicitud procesada correctamente"},
+        400: {"description": "Datos de entrada inválidos"},
+    },
+)
+def forgot_password(
+    body: ForgotPasswordDto,
+    service: AuthServiceDep,
+) -> MessageResponseDto:
+    service.request_password_reset(body.email)
+    return MessageResponseDto(
+        message="Si el correo está registrado, recibirás un enlace de recuperación válido por 15 minutos."
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponseDto,
+    status_code=status.HTTP_200_OK,
+    summary="Restablecer contraseña con token JWT",
+    description="Valida el token JWT de un solo uso, actualiza la contraseña e invalida sesiones previas.",
+    responses={
+        200: {"description": "Contraseña actualizada exitosamente"},
+        400: {"description": "Token inválido, expirado o ya utilizado"},
+        401: {"description": "Token no autorizado"},
+    },
+)
+def reset_password(
+    body: ResetPasswordDto,
+    service: AuthServiceDep,
+) -> MessageResponseDto:
+    service.reset_password(body.token, body.newPassword)
+    return MessageResponseDto(message="Contraseña actualizada exitosamente.")

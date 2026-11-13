@@ -1,7 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
-
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from app.shared.datetimes import ApiDatetime
 from app.shared.validation import validate_email, validate_text
 from app.students.students_schemas import (
@@ -158,3 +157,6 @@ def _email_errors(v: object) -> list[str]:
 def _raise_validation(messages: list[str]) -> None:
     if messages:
         raise ValueError(", ".join(messages))
+
+class MessageResponseDto(BaseModel):
+    message: str = Field(..., examples=["Operación realizada exitosamente."])
