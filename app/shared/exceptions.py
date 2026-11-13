@@ -1,5 +1,6 @@
 import logging
 from typing import Final
+import traceback
 
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -144,6 +145,7 @@ async def integrity_error_handler(
 
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    traceback.print_exc()  
     logger.error("Unhandled exception", exc_info=exc)
 
     return JSONResponse(
