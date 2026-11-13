@@ -51,9 +51,11 @@ const LOGIN_PAGE = "/login.html"
  * @template T
  * @param {string} path Ruta relativa al prefijo `/api`.
  * @param {RequestInit} [options] Opciones de `fetch`.
+ * @param {{ redirectOnUnauthorized?: boolean }} [behavior] Las pantallas públicas
+ * de recuperación manejan sus propios errores 401 sin redirigir al login.
  * @returns {Promise<T>}
  */
-async function api(path, options = {}) {
+async function api(path, options = {}, { redirectOnUnauthorized = true } = {}) {
 	const response = await fetch(`${API_BASE}${path}`, {
 		headers: { "Content-Type": "application/json" },
 		...options,
@@ -61,7 +63,7 @@ async function api(path, options = {}) {
 
 	// Sin sesión (o sesión expirada): se envía al login y, al entrar, se
 	// vuelve a la página actual. En el propio login el 401 se muestra como error.
-	if (response.status === 401 && window.location.pathname !== LOGIN_PAGE) {
+	if (redirectOnUnauthorized && response.status === 401 && window.location.pathname !== LOGIN_PAGE) {
 		const next = encodeURIComponent(window.location.pathname + window.location.search)
 		window.location.href = `${LOGIN_PAGE}?next=${next}`
 		return new Promise(() => {})

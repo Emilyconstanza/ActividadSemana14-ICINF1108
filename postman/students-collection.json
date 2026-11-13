@@ -289,6 +289,1121 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "Password Reset (One-Time JWT)",
+            "description": "Pruebas locales en dos fases: ejecutar A, copiar manualmente el JWT del enlace simulado en el log a la variable local resetToken, y ejecutar B. A pausa el Runner deliberadamente. Ver postman/README.md. Requiere backend de recuperación ya integrado; 404/500 nunca son resultados válidos. Cada petición desactiva cookie jar y usa solo cookies explícitas de la cuenta temporal.",
+            "item": [
+                {
+                    "name": "A - Solicitud (pausa para copiar token)",
+                    "item": [
+                        {
+                            "name": "00 - Crear cuenta temporal",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/register",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "register"
+                                    ]
+                                },
+                                "description": "Genera correo y contraseñas de prueba nuevos. Nunca reutiliza una cuenta personal. No exportar los valores generados.",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"name\": \"Prueba Password Reset\",\n    \"email\": \"{{resetEmail}}\",\n    \"password\": \"{{oldPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"Entorno local seleccionado\", () => {",
+                                            "    pm.expect(pm.environment.name, \"Importa y selecciona password-reset-local.postman_environment.json\").to.be.a(\"string\").and.not.empty;",
+                                            "});",
+                                            "if (!pm.environment.name) throw new Error(\"Selecciona el entorno Password Reset - Local.\");",
+                                            "const base = pm.variables.replaceIn(\"{{baseUrl}}\");",
+                                            "pm.test(\"Destino de pruebas local\", () => {",
+                                            "    pm.expect(base).to.match(/^http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/);",
+                                            "});",
+                                            "if (!/^http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(base)) {",
+                                            "    throw new Error(\"Esta carpeta modifica una cuenta temporal: usa localhost o 127.0.0.1 sin barra final.\");",
+                                            "}",
+                                            "const runId = pm.variables.replaceIn(\"{{$guid}}\");",
+                                            "pm.environment.set(\"resetEmail\", \"reset-\" + runId + \"@example.com\");",
+                                            "pm.environment.set(\"missingEmail\", \"missing-\" + runId + \"@example.com\");",
+                                            "pm.environment.set(\"oldPassword\", \"Old!\" + pm.variables.replaceIn(\"{{$guid}}\"));",
+                                            "pm.environment.set(\"newPassword\", \"New!\" + pm.variables.replaceIn(\"{{$guid}}\"));",
+                                            "[\"resetToken\", \"oldSessionCookie\", \"newSessionCookie\", \"resetUserId\", \"registeredReply\", \"resetConsumed\", \"setupComplete\"].forEach(key => pm.environment.set(key, \"\"));"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(201);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"La respuesta identifica la cuenta temporal\", () => {",
+                                            "    pm.expect(body.data.id).to.be.a(\"string\").and.not.empty;",
+                                            "    pm.expect(body.data.email).to.eql(pm.environment.get(\"resetEmail\"));",
+                                            "});",
+                                            "if (pm.response.code === 201 && body.data && body.data.id) pm.environment.set(\"resetUserId\", body.data.id);"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "01 - Login con contraseña antigua y guardar sid",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/login",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "login"
+                                    ]
+                                },
+                                "description": "Guarda exclusivamente la cookie sid de esta cuenta para demostrar después su revocación.",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"email\": \"{{resetEmail}}\",\n    \"password\": \"{{oldPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"oldPassword\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, oldPassword, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"La respuesta identifica la cuenta temporal\", () => {",
+                                            "    pm.expect(body.data.id).to.be.a(\"string\").and.not.empty;",
+                                            "    pm.expect(body.data.email).to.eql(pm.environment.get(\"resetEmail\"));",
+                                            "});",
+                                            "const cookieHeader = pm.response.headers.all().find(header =>",
+                                            "    header.key.toLowerCase() === \"set-cookie\" && /^sid=/.test(header.value)",
+                                            ");",
+                                            "const sid = cookieHeader ? cookieHeader.value.split(\";\")[0].slice(4) : \"\";",
+                                            "pm.test(\"La sesión de prueba fue emitida\", () => pm.expect(sid).to.be.a(\"string\").and.not.empty);",
+                                            "if (pm.response.code === 200 && sid) pm.environment.set(\"oldSessionCookie\", sid);"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "02 - Confirmar sesión antigua vigente",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Cookie",
+                                        "value": "sid={{oldSessionCookie}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/me",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "me"
+                                    ]
+                                },
+                                "description": ""
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetUserId\", \"oldSessionCookie\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetUserId, oldSessionCookie\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"La cookie antigua pertenece a la cuenta temporal\", () => pm.expect(body.data.id).to.eql(pm.environment.get(\"resetUserId\")));"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "03 - Solicitar enlace para correo registrado",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/forgot-password",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "forgot-password"
+                                    ]
+                                },
+                                "description": "El JWT no se obtiene de esta respuesta. Leer solamente el enlace simulado del log local y copiar el valor token al entorno.",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"email\": \"{{resetEmail}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"Mensaje genérico sin token, correo ni datos del usuario\", () => {",
+                                            "    pm.expect(body).to.have.all.keys(\"code\", \"success\", \"message\", \"timestamp\", \"data\");",
+                                            "    pm.expect(body.data).to.have.all.keys(\"message\");",
+                                            "    pm.expect(body.data.message).to.eql(\"Si el correo está registrado, recibirás un enlace de recuperación válido por 15 minutos.\");",
+                                            "});",
+                                            "if (pm.response.code === 200 && body.data) {",
+                                            "    pm.environment.set(\"registeredReply\", JSON.stringify({code:body.code, success:body.success, message:body.message, data:body.data}));",
+                                            "}"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "04 - Correo inexistente: misma respuesta y pausa",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/forgot-password",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "forgot-password"
+                                    ]
+                                },
+                                "description": "Termina el Runner al completar A. Pegar el JWT local en resetToken y ejecutar únicamente B antes de que venza (15 minutos).",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"email\": \"{{missingEmail}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"missingEmail\", \"registeredReply\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: missingEmail, registeredReply\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"Mensaje genérico sin token, correo ni datos del usuario\", () => {",
+                                            "    pm.expect(body).to.have.all.keys(\"code\", \"success\", \"message\", \"timestamp\", \"data\");",
+                                            "    pm.expect(body.data).to.have.all.keys(\"message\");",
+                                            "    pm.expect(body.data.message).to.eql(\"Si el correo está registrado, recibirás un enlace de recuperación válido por 15 minutos.\");",
+                                            "});",
+                                            "pm.test(\"Anti-enumeración: misma respuesta funcional que correo registrado\", () => {",
+                                            "    pm.expect({code:body.code, success:body.success, message:body.message, data:body.data}).to.deep.eql(JSON.parse(pm.environment.get(\"registeredReply\")));",
+                                            "});",
+                                            "if (pm.response.code === 200) pm.environment.set(\"setupComplete\", \"true\");",
+                                            "// Pausa deliberada: el usuario copia el JWT del log local antes de ejecutar B.",
+                                            "pm.execution.setNextRequest(null);"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "B - Restablecimiento y seguridad",
+                    "item": [
+                        {
+                            "name": "05 - Token con payload manipulado es rechazado",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/reset-password",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "reset-password"
+                                    ]
+                                },
+                                "description": "Usa un JWT real aún no consumido y cambia un carácter del payload, dejando intacta su firma. resetToken original no cambia.",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"token\": \"{{tamperedToken}}\",\n    \"newPassword\": \"{{newPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"oldPassword\", \"newPassword\", \"resetToken\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, oldPassword, newPassword, resetToken, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "const token = pm.environment.get(\"resetToken\");",
+                                            "pm.test(\"Se proporcionó un JWT completo de tres segmentos\", () => {",
+                                            "    pm.expect(token).to.match(/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);",
+                                            "});",
+                                            "if (!/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token)) {",
+                                            "    throw new Error(\"resetToken debe contener solo el JWT completo, sin URL, comillas ni prefijo Bearer.\");",
+                                            "}",
+                                            "pm.test(\"Se completó la fase A\", () => pm.expect(pm.environment.get(\"setupComplete\")).to.eql(\"true\"));",
+                                            "const parts = token.split(\".\");",
+                                            "const index = Math.min(5, parts[1].length - 1);",
+                                            "const changed = parts[1].slice(0, index) + (parts[1][index] === \"A\" ? \"B\" : \"A\") + parts[1].slice(index + 1);",
+                                            "pm.variables.set(\"tamperedToken\", parts[0] + \".\" + changed + \".\" + parts[2]);",
+                                            "pm.test(\"Solo cambia un carácter del payload; la firma se conserva\", () => {",
+                                            "    const altered = pm.variables.get(\"tamperedToken\").split(\".\");",
+                                            "    pm.expect(altered[0]).to.eql(parts[0]);",
+                                            "    pm.expect(altered[2]).to.eql(parts[2]);",
+                                            "    pm.expect(altered[1]).not.to.eql(parts[1]);",
+                                            "    pm.expect(altered[1].length).to.eql(parts[1].length);",
+                                            "});"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"Token manipulado devuelve 400 o 401\", () => pm.expect(pm.response.code).to.be.oneOf([400, 401]));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de error coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(pm.response.code);",
+                                            "    pm.expect(body.success).to.eql(false);",
+                                            "    pm.expect(body.data).to.eql(null);",
+                                            "});"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "06 - Token válido cambia contraseña una vez",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/reset-password",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "reset-password"
+                                    ]
+                                },
+                                "description": "Consume el JWT original. Si falla, no interpretar las pruebas posteriores como validación de uso único.",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"token\": \"{{resetToken}}\",\n    \"newPassword\": \"{{newPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"oldPassword\", \"newPassword\", \"resetToken\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, oldPassword, newPassword, resetToken, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "const token = pm.environment.get(\"resetToken\");",
+                                            "pm.test(\"Se proporcionó un JWT completo de tres segmentos\", () => {",
+                                            "    pm.expect(token).to.match(/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);",
+                                            "});",
+                                            "if (!/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token)) {",
+                                            "    throw new Error(\"resetToken debe contener solo el JWT completo, sin URL, comillas ni prefijo Bearer.\");",
+                                            "}",
+                                            "pm.test(\"Se completó la fase A\", () => pm.expect(pm.environment.get(\"setupComplete\")).to.eql(\"true\"));",
+                                            "pm.environment.set(\"resetConsumed\", \"\");"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"Confirmación de restablecimiento\", () => pm.expect(body.data.message).to.eql(\"Contraseña actualizada exitosamente.\"));",
+                                            "if (pm.response.code === 200) pm.environment.set(\"resetConsumed\", \"true\");"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "07 - Reutilizar exactamente el mismo JWT falla",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/reset-password",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "reset-password"
+                                    ]
+                                },
+                                "description": "Intenta volver a la contraseña anterior usando el mismo JWT. Los logins posteriores también comprueban que este intento no cambió la clave.",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"token\": \"{{resetToken}}\",\n    \"newPassword\": \"{{oldPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"oldPassword\", \"newPassword\", \"resetToken\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, oldPassword, newPassword, resetToken, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "const token = pm.environment.get(\"resetToken\");",
+                                            "pm.test(\"Se proporcionó un JWT completo de tres segmentos\", () => {",
+                                            "    pm.expect(token).to.match(/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);",
+                                            "});",
+                                            "if (!/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token)) {",
+                                            "    throw new Error(\"resetToken debe contener solo el JWT completo, sin URL, comillas ni prefijo Bearer.\");",
+                                            "}",
+                                            "pm.test(\"Se completó la fase A\", () => pm.expect(pm.environment.get(\"setupComplete\")).to.eql(\"true\"));",
+                                            "{",
+                                            "const required = [\"resetConsumed\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetConsumed\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "pm.test(\"El mismo JWT fue consumido con éxito en 06\", () => pm.expect(pm.environment.get(\"resetConsumed\")).to.eql(\"true\"));"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"JWT ya consumido devuelve 400 o 401\", () => pm.expect(pm.response.code).to.be.oneOf([400, 401]));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de error coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(pm.response.code);",
+                                            "    pm.expect(body.success).to.eql(false);",
+                                            "    pm.expect(body.data).to.eql(null);",
+                                            "});"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "08 - La sesión anterior fue revocada",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Cookie",
+                                        "value": "sid={{oldSessionCookie}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/me",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "me"
+                                    ]
+                                },
+                                "description": "Envía explícitamente el sid que funcionaba en 02. Cookie jar desactivado: la ausencia de cookie no puede producir un falso positivo."
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"oldSessionCookie\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: oldSessionCookie, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "{",
+                                            "const required = [\"resetConsumed\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetConsumed\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "pm.test(\"El mismo JWT fue consumido con éxito en 06\", () => pm.expect(pm.environment.get(\"resetConsumed\")).to.eql(\"true\"));"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"Cookie previamente vigente devuelve 401 tras reset\", () => pm.expect(pm.response.code).to.be.oneOf([401]));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de error coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(pm.response.code);",
+                                            "    pm.expect(body.success).to.eql(false);",
+                                            "    pm.expect(body.data).to.eql(null);",
+                                            "});"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "09 - Login con contraseña antigua falla",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/login",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "login"
+                                    ]
+                                },
+                                "description": "",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"email\": \"{{resetEmail}}\",\n    \"password\": \"{{oldPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"oldPassword\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, oldPassword\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "{",
+                                            "const required = [\"resetConsumed\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetConsumed\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "pm.test(\"El mismo JWT fue consumido con éxito en 06\", () => pm.expect(pm.environment.get(\"resetConsumed\")).to.eql(\"true\"));"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"Contraseña antigua devuelve 401\", () => pm.expect(pm.response.code).to.be.oneOf([401]));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de error coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(pm.response.code);",
+                                            "    pm.expect(body.success).to.eql(false);",
+                                            "    pm.expect(body.data).to.eql(null);",
+                                            "});"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "10 - Login con contraseña nueva funciona",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/login",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "login"
+                                    ]
+                                },
+                                "description": "",
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"email\": \"{{resetEmail}}\",\n    \"password\": \"{{newPassword}}\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                }
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"resetEmail\", \"newPassword\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetEmail, newPassword, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "{",
+                                            "const required = [\"resetConsumed\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetConsumed\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "pm.test(\"El mismo JWT fue consumido con éxito en 06\", () => pm.expect(pm.environment.get(\"resetConsumed\")).to.eql(\"true\"));"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"La respuesta identifica la cuenta temporal\", () => {",
+                                            "    pm.expect(body.data.id).to.be.a(\"string\").and.not.empty;",
+                                            "    pm.expect(body.data.email).to.eql(pm.environment.get(\"resetEmail\"));",
+                                            "});",
+                                            "const cookieHeader = pm.response.headers.all().find(header =>",
+                                            "    header.key.toLowerCase() === \"set-cookie\" && /^sid=/.test(header.value)",
+                                            ");",
+                                            "const sid = cookieHeader ? cookieHeader.value.split(\";\")[0].slice(4) : \"\";",
+                                            "pm.test(\"La sesión de prueba fue emitida\", () => pm.expect(sid).to.be.a(\"string\").and.not.empty);",
+                                            "pm.test(\"El login mantiene la identidad de la cuenta\", () => pm.expect(body.data.id).to.eql(pm.environment.get(\"resetUserId\")));",
+                                            "if (pm.response.code === 200 && sid) pm.environment.set(\"newSessionCookie\", sid);"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "11 - La nueva sesión funciona",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Cookie",
+                                        "value": "sid={{newSessionCookie}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/me",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "me"
+                                    ]
+                                },
+                                "description": ""
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"newSessionCookie\", \"resetUserId\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: newSessionCookie, resetUserId\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "{",
+                                            "const required = [\"resetConsumed\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: resetConsumed\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}",
+                                            "pm.test(\"El mismo JWT fue consumido con éxito en 06\", () => pm.expect(pm.environment.get(\"resetConsumed\")).to.eql(\"true\"));"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                                            "const body = pm.response.json();",
+                                            "pm.test(\"Envelope de éxito coherente\", () => {",
+                                            "    pm.expect(body.code).to.eql(200);",
+                                            "    pm.expect(body.success).to.eql(true);",
+                                            "    pm.expect(body.data).to.be.an(\"object\");",
+                                            "});",
+                                            "pm.test(\"La nueva sesión identifica la misma cuenta\", () => pm.expect(body.data.id).to.eql(pm.environment.get(\"resetUserId\")));"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "12 - Cerrar sesión temporal",
+                            "protocolProfileBehavior": {
+                                "disableCookies": true,
+                                "followRedirects": false
+                            },
+                            "request": {
+                                "auth": {
+                                    "type": "noauth"
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "key": "Cookie",
+                                        "value": "sid={{newSessionCookie}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/auth/logout",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "auth",
+                                        "logout"
+                                    ]
+                                },
+                                "description": "Revoca la sesión nueva. La cuenta de prueba permanece en la base local; no se borran usuarios ni bases de datos automáticamente."
+                            },
+                            "event": [
+                                {
+                                    "listen": "prerequest",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "{",
+                                            "const required = [\"newSessionCookie\"];",
+                                            "const missing = required.filter(key => !pm.environment.get(key));",
+                                            "pm.test(\"Precondiciones presentes: newSessionCookie\", () => {",
+                                            "    pm.expect(missing, \"Ejecuta A primero y copia el token local antes de B. No omitir este fallo.\").to.be.empty;",
+                                            "});",
+                                            "if (missing.length) throw new Error(\"Faltan variables del entorno: \" + missing.join(\", \"));",
+                                            "}"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "type": "text/javascript",
+                                        "exec": [
+                                            "pm.test(\"Logout de prueba devuelve 200\", () => pm.response.to.have.status(200));",
+                                            "pm.execution.setNextRequest(null);"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         }
     ]
 }

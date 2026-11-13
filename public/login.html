@@ -98,6 +98,12 @@
 				></button>
 			</form>
 
+			<p x-show="mode === 'login'" class="mt-4 text-center text-sm">
+				<a href="/forgot-password/" class="font-medium text-zinc-900 underline underline-offset-2">
+					¿Olvidaste tu contraseña?
+				</a>
+			</p>
+
 			<p class="mt-6 text-center text-sm text-zinc-500">
 				<span x-text="mode === 'login' ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'"></span>
 				<button

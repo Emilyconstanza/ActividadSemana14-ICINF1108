@@ -1,0 +1,81 @@
+@startuml
+title 1. Restablecimiento con JWT de un solo uso
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam sequenceArrowColor #334155
+skinparam sequenceLifeLineBorderColor #64748B
+skinparam participantBackgroundColor #EFF6FF
+skinparam participantBorderColor #475569
+skinparam noteBackgroundColor #FFFBEB
+skinparam noteBorderColor #D97706
+skinparam maxMessageSize 280
+autonumber
+
+participant "Cliente : Browser" as Cliente
+participant "API : FastAPI" as API
+participant "Servicio : AuthService" as Servicio
+database "DB : PostgreSQL" as DB
+
+note over API, DB
+  Flujo objetivo: depende de los PR del backend pendientes.
+  El consumo del token, el cambio de hash y la revocación
+  de sesiones pertenecen a una única transacción.
+end note
+
+Cliente -> Cliente : Leer token del enlace y quitarlo de la URL\nConservarlo solo en memoria
+Cliente -> API : POST /api/auth/reset-password\n{token, newPassword}
+activate API
+API -> API : Validar ResetPasswordDto\nContraseña: 8 a 72 caracteres
+API -> Servicio : reset_password(token, newPassword)
+activate Servicio
+Servicio -> Servicio : Verificar JWT con lista fija [HS256]\nExigir exp, sub, iat, jti y type=password_reset
+
+alt Firma o claims inválidos / JWT expirado
+  Servicio --> API : Error controlado de token
+  API --> Cliente : 400 / 401; solicitar un enlace nuevo
+else Firma y claims válidos
+  Servicio -> DB : SELECT token WHERE jti = :jti
+  activate DB
+  DB --> Servicio : Registro o None
+  deactivate DB
+
+  alt Token válido
+    note right of Servicio
+      Registro existente, usuario coincidente,
+      used_at IS NULL y expires_at > ahora UTC.
+    end note
+    Servicio -> Servicio : Hashear newPassword con el hasher del proyecto
+    Servicio -> DB : BEGIN; UPDATE password_reset_tokens\nSET used_at = :ahora WHERE jti = :jti\nAND user_id = :user_id AND used_at IS NULL\nAND expires_at > :ahora
+    activate DB
+    DB --> Servicio : Filas afectadas
+
+    alt 1 fila: consumo ganado
+      Servicio -> DB : UPDATE users SET password_hash = :hash\nWHERE id = :user_id
+      DB --> Servicio : Contraseña actualizada
+      Servicio -> DB : DELETE FROM user_sessions\nWHERE user_id = :user_id
+      DB --> Servicio : Sesiones anteriores revocadas
+      Servicio -> DB : COMMIT único
+      DB --> Servicio : Cambios confirmados
+      Servicio --> API : Operación completada
+      API --> Cliente : 200 OK\n{data: {message: "Contraseña actualizada exitosamente."}}
+    else 0 filas: expiró o se consumió concurrentemente
+      Servicio -> DB : ROLLBACK
+      DB --> Servicio : Sin cambios
+      Servicio --> API : Error controlado de token
+      API --> Cliente : 400 / 401; solicitar un enlace nuevo
+    end
+    deactivate DB
+  else Token inválido, expirado o ya usado
+    Servicio --> API : Error controlado de token
+    API --> Cliente : 400 / 401; solicitar un enlace nuevo
+  end
+end
+deactivate Servicio
+deactivate API
+
+note over Cliente, DB
+  Una reutilización se rechaza y no modifica la contraseña.
+  Un error durante las escrituras provoca ROLLBACK de toda la transacción.
+  Datos inválidos: 400 en la base actual; 422 según el contrato objetivo.
+end note
+@enduml
