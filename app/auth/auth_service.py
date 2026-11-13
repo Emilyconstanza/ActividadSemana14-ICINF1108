@@ -17,6 +17,7 @@ from app.users.users_models import UserModel
 from app.users.users_repository import UsersRepository
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 class AuthService:
     def __init__(self, db: DbSession) -> None:
@@ -71,7 +72,7 @@ class AuthService:
 
         reset_link = f"http://localhost:3000/reset-password?token={token}"
 
-        logger.info(
+        logger.warning(
             "Correo de recuperación simulado para %s. Enlace: %s",
             email,
             reset_link,
